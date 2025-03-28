@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -24,14 +25,14 @@ type CreateRoomReq struct {
 
 func (h *Handler) CreateRoom(c *gin.Context) {
 	var req CreateRoomReq
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err :=c.ShouldBindJSON(&req); err != nil{
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	h.hub.Rooms[req.ID] = &Room{
-		ID:      req.ID,
-		Name:    req.Name,
+		ID: req.ID,
+		Name: req.Name,
 		Clients: make(map[string]*Client),
 	}
 
@@ -39,14 +40,15 @@ func (h *Handler) CreateRoom(c *gin.Context) {
 }
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
+	ReadBufferSize: 1024,
 	WriteBufferSize: 1024,
+
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
 }
 
-func (h *Handler) JoinRoom(c *gin.Context) {
+func  (h *Handler) JoinRoom(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -58,37 +60,40 @@ func (h *Handler) JoinRoom(c *gin.Context) {
 	username := c.Query("username")
 
 	cl := &Client{
-		Conn:     conn,
-		Message:  make(chan *Message, 10),
-		ID:       clientID,
-		RoomID:   roomID,
+		Conn: conn,
+		Message: make(chan *Message, 10),
+		ID: clientID,
+		RoomID: roomID,
 		Username: username,
 	}
 
 	m := &Message{
-		Content:  "A new user has joined the room",
-		RoomID:   roomID,
+		Content: "A new user has joinedd room",
+		RoomID: roomID,
 		Username: username,
 	}
 
+	// Register a new client through the register channel
 	h.hub.Register <- cl
+	// Broadcast that message
 	h.hub.Broadcast <- m
-
+	// writeMessage()
 	go cl.writeMessage()
+	// readMessage()
 	cl.readMessage(h.hub)
+	
 }
 
 type RoomRes struct {
-	ID   string `json:"id"`
+	ID string `json:"id"`
 	Name string `json:"name"`
 }
 
 func (h *Handler) GetRooms(c *gin.Context) {
-	rooms := make([]RoomRes, 0)
-
+	rooms := make([]RoomRes,0)
 	for _, r := range h.hub.Rooms {
 		rooms = append(rooms, RoomRes{
-			ID:   r.ID,
+			ID: r.ID,
 			Name: r.Name,
 		})
 	}
@@ -104,11 +109,17 @@ type ClientRes struct {
 func (h *Handler) GetClients(c *gin.Context) {
 	var clients []ClientRes
 	roomId := c.Param("roomId")
-
+	log.Printf("Checking room: %s", roomId)
+	
 	if _, ok := h.hub.Rooms[roomId]; !ok {
 		clients = make([]ClientRes, 0)
 		c.JSON(http.StatusOK, clients)
+		log.Println("Room not found")
+		return
 	}
+
+	
+	
 
 	for _, c := range h.hub.Rooms[roomId].Clients {
 		clients = append(clients, ClientRes{
@@ -119,3 +130,4 @@ func (h *Handler) GetClients(c *gin.Context) {
 
 	c.JSON(http.StatusOK, clients)
 }
+
